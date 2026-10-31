@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Suspense } from "react";
 import AutoRefresh from "@/components/AutoRefresh";
+import HaikuStats from "@/components/HaikuStats";
 import { connection } from "next/server";
 import { listSessions } from "@/lib/data";
 import { ago, shortCwd } from "@/lib/format";
@@ -8,6 +9,14 @@ import { ago, shortCwd } from "@/lib/format";
 export default function Home() {
   return (
     <main className="page">
+      <AutoRefresh ms={5000} />
+      <h1>Haiku flywheel</h1>
+      <p className="sub">
+        How often Haiku answered for you, and how often it was right. <Link href="/haiku">See where it went wrong →</Link>
+      </p>
+      <Suspense fallback={<p className="muted">Loading…</p>}>
+        <HaikuStats />
+      </Suspense>
       <h1>Sessions</h1>
       <p className="sub">Every agent running the plugin, newest first.</p>
       <Suspense fallback={<p className="muted">Loading…</p>}>
@@ -24,7 +33,6 @@ async function Sessions() {
     return <p className="empty">No sessions yet. Set <code>STEERABLE_SYNC_URL</code> and <code>STEERABLE_SYNC_TOKEN</code> and run Claude Code with the plugin.</p>;
   return (
     <>
-      <AutoRefresh ms={5000} />
       <table className="list">
         <thead>
           <tr>
