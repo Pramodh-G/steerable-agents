@@ -24,6 +24,11 @@ PROMPT = """You decide whether an AI coding agent can answer its own questions u
 ## Past answers from the user (JSONL)
 {precedents}
 
+## Corrections: past auto-answers the user overrode on the dashboard (JSONL)
+Haiku answered these from precedent and got them wrong; `answer` is the user's corrected answer and
+`haiku_answer` is what was wrongly assumed. Corrections outrank the past answers above.
+{corrections}
+
 ## Recent conversation in the current session
 {context}
 
@@ -47,14 +52,19 @@ def main() -> None:
     if is_child():
         return
     questions = (hook_input.get("tool_input") or {}).get("questions") or []
-    precedents = [r for r in load_records() if r.get("kind") == "answer"][-MAX_PRECEDENTS:]
-    if not questions or not precedents:
+    records = load_records()
+    precedents = [r for r in records if r.get("kind") == "answer"][-MAX_PRECEDENTS:]
+    corrections = [r for r in records if r.get("kind") == "review" and r.get("verdict") == "override"][-MAX_PRECEDENTS:]
+    if not questions or not (precedents or corrections):
         return
 
     prompt = PROMPT.format(
         precedents="\n".join(
             json.dumps({k: r.get(k) for k in ("id", "cwd", "question", "options", "answer")}) for r in precedents
-        ),
+        ) or "(none)",
+        corrections="\n".join(
+            json.dumps({k: r.get(k) for k in ("id", "cwd", "question", "haiku_answer", "answer")}) for r in corrections
+        ) or "(none)",
         context=transcript_tail(hook_input.get("transcript_path")) or "(none)",
         cwd=hook_input.get("cwd"),
         questions=json.dumps(questions, indent=1),
