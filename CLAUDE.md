@@ -1,4 +1,4 @@
-# human
+# steerable-agents
 
 A Claude Code plugin that makes the model ask the human at real decision points, remembers the answers, and uses Haiku to answer repeat questions so the user isn't asked the same thing twice.
 
@@ -11,16 +11,16 @@ Today's agents need a lot of babysitting. Running several agents leaves you two 
 
 Output is cheap to generate, but human attention is not. Every "this is wrong, please fix this" correction restarts the loop and costs attention again.
 
-`human` moves steering to the start, into the design phase. Answering a few well-chosen questions up front is much cheaper than fixing a finished result, and the task is more likely to end up the way the user wanted. The stored-answer + Haiku layer keeps that cost from piling up: questions the user has already answered for this scope don't get asked again.
+`steerable-agents` moves steering to the start, into the design phase. Answering a few well-chosen questions up front is much cheaper than fixing a finished result, and the task is more likely to end up the way the user wanted. The stored-answer + Haiku layer keeps that cost from piling up: questions the user has already answered for this scope don't get asked again.
 
 **Design principle:** spend human attention on decisions, not on reviewing. Every feature should either surface a real decision early or avoid asking about one that has already been made.
 
 ## Downstream value
 
-`human` delivers three things:
+`steerable-agents` delivers three things:
 
 1. **Steerable agents.** The user steers early, at decision points.
-2. **Reusable defaults: memory from the right source.** Today's memory *infers* preferences from conversations after the fact. `human` *elicits* them: each stored record is an explicit choice the user made from concrete options in a real context. That makes it a more reliable source of preferences, and because each answer is explicit, you can see which remembered preferences actually get reused and how much they're worth.
+2. **Reusable defaults: memory from the right source.** Today's memory *infers* preferences from conversations after the fact. `steerable-agents` *elicits* them: each stored record is an explicit choice the user made from concrete options in a real context. That makes it a more reliable source of preferences, and because each answer is explicit, you can see which remembered preferences actually get reused and how much they're worth.
 3. **A data flywheel for taste.** Over time, the question/options/answer/context records become a high-quality dataset of human taste and judgment: what counts as a real decision, what options were on the table, and what the user picked. That data can guide better models and better evals. It's a win for the user (less babysitting, better results) and a win for the agent (fewer corrections, clearer intent).
 
 **Implications for the build:**
@@ -32,12 +32,12 @@ Output is cheap to generate, but human attention is not. Every "this is wrong, p
 
 The plugin ships four pieces:
 
-1. **Output style: `human`.** Tells the model to ask instead of assume.
+1. **Output style: `steerable-agents`.** Tells the model to ask instead of assume.
 2. **PreToolUse hook.** Intercepts `AskUserQuestion` before the user sees it.
 3. **PostToolUse hook.** Saves the user's answers after `AskUserQuestion` returns.
 4. **Post-session hook** (`SessionEnd` and/or `Stop`). End-of-session work. Exact role still to be decided (see Open questions).
 
-### 1. Output style: `human`
+### 1. Output style: `steerable-agents`
 
 The style prompt should tell the model:
 
@@ -74,20 +74,20 @@ Runs when a session ends. Likely jobs: consolidating or deduplicating stored ans
 ## Plugin layout
 
 ```
-.claude-plugin/plugin.json   # manifest
-output-styles/human.md       # the "human" output style
-hooks/hooks.json             # PreToolUse / PostToolUse (AskUserQuestion) + SessionEnd
-hooks/human_common.py        # store, transcript context, Haiku call
-hooks/pre_ask.py             # Haiku auto-answer from precedent (fails open)
-hooks/post_ask.py            # records user answers
-hooks/session_end.py         # per-session asked/auto-answered summary
+.claude-plugin/plugin.json         # manifest
+output-styles/steerable-agents.md  # the "steerable-agents" output style
+hooks/hooks.json                   # PreToolUse / PostToolUse (AskUserQuestion) + SessionEnd
+hooks/common.py                    # store, transcript context, Haiku call
+hooks/pre_ask.py                   # Haiku auto-answer from precedent (fails open)
+hooks/post_ask.py                  # records user answers
+hooks/session_end.py               # per-session asked/auto-answered summary
 ```
 
 ## Decisions (v0, hackathon, keep it minimal)
 
-- Store: one global JSONL at `~/.claude/human/answers.jsonl` (`HUMAN_STORE` overrides). Records carry `cwd`; no explicit scope model yet, so Haiku judges applicability from cwd and context.
+- Store: one global JSONL at `~/.claude/steerable-agents/answers.jsonl` (`STEERABLE_STORE` overrides). Records carry `cwd`; no explicit scope model yet, so Haiku judges applicability from cwd and context.
 - Record kinds: `answer` (source `user`), `auto_answer` (source `haiku`, with `precedent_ids`), `session` (summary). `schema_version: 1`.
-- Haiku (`claude-haiku-5-5`, thinking off, effort low) is called directly over the Messages API with urllib when a key is set (`ANTHROPIC_API_KEY`, else `~/.claude/human/anthropic_api_key`; never commit it). ~2s per batch. Fallback: `claude -p --model haiku --tools "" --no-session-persistence` (~8s); `HUMAN_HOOK_CHILD=1` stops the hooks from running inside that call.
+- Haiku (`claude-haiku-5-5`, thinking off, effort low) is called directly over the Messages API with urllib when a key is set (`ANTHROPIC_API_KEY`, else `~/.claude/steerable-agents/anthropic_api_key`; never commit it). ~2s per batch. Fallback: `claude -p --model haiku --tools "" --no-session-persistence` (~8s); `STEERABLE_HOOK_CHILD=1` stops the hooks from running inside that call.
 - Auto-answers deny the AskUserQuestion call and send the answers to the model in `permissionDecisionReason`. The model is told to mention which answers it reused, and to re-ask only the questions that weren't settled.
 - Hooks are Python stdlib only.
 

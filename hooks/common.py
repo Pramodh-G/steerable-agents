@@ -1,4 +1,4 @@
-"""Shared helpers for the human plugin hooks: the answer store, transcript context, and Haiku calls."""
+"""Shared helpers for the steerable-agents plugin hooks: the answer store, transcript context, and Haiku calls."""
 
 import json
 import os
@@ -11,12 +11,12 @@ import uuid
 from pathlib import Path
 
 SCHEMA_VERSION = 1
-CHILD_ENV = "HUMAN_HOOK_CHILD"
+CHILD_ENV = "STEERABLE_HOOK_CHILD"
 HAIKU_MODEL = "claude-haiku-5-5"
 
 
 def store_path() -> Path:
-    return Path(os.environ.get("HUMAN_STORE", Path.home() / ".claude" / "human" / "answers.jsonl"))
+    return Path(os.environ.get("STEERABLE_STORE", Path.home() / ".claude" / "steerable-agents" / "answers.jsonl"))
 
 
 def read_hook_input() -> dict:
@@ -85,11 +85,11 @@ def transcript_tail(transcript_path: str, max_messages: int = 20, max_chars: int
 
 
 def api_key() -> str:
-    """ANTHROPIC_API_KEY, else ~/.claude/human/anthropic_api_key (kept outside the repo, mode 600)."""
+    """ANTHROPIC_API_KEY, else ~/.claude/steerable-agents/anthropic_api_key (kept outside the repo, mode 600)."""
     key = os.environ.get("ANTHROPIC_API_KEY", "").strip()
     if key:
         return key
-    path = Path(os.environ.get("HUMAN_KEY_FILE", Path.home() / ".claude" / "human" / "anthropic_api_key"))
+    path = Path(os.environ.get("STEERABLE_KEY_FILE", Path.home() / ".claude" / "steerable-agents" / "anthropic_api_key"))
     return path.read_text().strip() if path.exists() else ""
 
 

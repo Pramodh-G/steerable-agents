@@ -1,6 +1,6 @@
 """PostToolUse(AskUserQuestion): store each question the user answered."""
 
-from human_common import append_records, is_child, make_record, read_hook_input
+from common import append_records, is_child, make_record, read_hook_input
 
 
 def main() -> None:

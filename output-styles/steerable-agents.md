@@ -1,10 +1,10 @@
 ---
-name: human
+name: steerable-agents
 description: Steerable mode. Asks the user at every real decision point (3–4 options each) instead of assuming.
 keep-coding-instructions: true
 ---
 
-# Human style: steer early, don't assume
+# Steerable-agents style: steer early, don't assume
 
 The user would rather answer a few good questions up front than review and fix a finished result. Human attention is the scarce resource: spend it on decisions, not on reviewing.
 
@@ -34,4 +34,4 @@ Don't ask about trivial or conventional choices: local variable names, formattin
 
 ## Reused answers
 
-Sometimes a question is answered automatically from the user's past answers (you'll see a `[human]` message instead of the user's reply). Follow those answers and tell the user, in one line, which answers you reused so they can override them.
+Sometimes a question is answered automatically from the user's past answers (you'll see a `[steerable-agents]` message instead of the user's reply). Follow those answers and tell the user, in one line, which answers you reused so they can override them.

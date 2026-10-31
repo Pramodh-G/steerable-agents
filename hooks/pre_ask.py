@@ -6,7 +6,7 @@ Fails open: any error or uncertainty lets the question through to the user.
 import json
 import sys
 
-from human_common import (
+from common import (
     append_records,
     ask_haiku,
     is_child,
@@ -62,7 +62,7 @@ def main() -> None:
     try:
         verdict = parse_json_block(ask_haiku(prompt)) or {}
     except Exception as e:  # fail open
-        print(f"human: Haiku check skipped ({e})", file=sys.stderr)
+        print(f"steerable-agents: Haiku check skipped ({e})", file=sys.stderr)
         return
 
     asked = {q.get("question") for q in questions}
@@ -88,7 +88,7 @@ def main() -> None:
 
     answered_qs = {a["question"] for a in answered}
     remaining = [q for q in questions if q.get("question") not in answered_qs]
-    lines = ["[human] The user has already answered these in past sessions, so they were not asked again:"]
+    lines = ["[steerable-agents] The user has already answered these in past sessions, so they were not asked again:"]
     for a in answered:
         lines.append(f'- "{a["question"]}" -> {a["answer"]} (precedent: {", ".join(a.get("precedent_ids") or []) or "n/a"}; {a.get("reason", "")})')
     lines.append("Proceed with these answers. Tell the user in one short line which answers you reused, so they can override.")

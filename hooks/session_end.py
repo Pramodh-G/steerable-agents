@@ -1,6 +1,6 @@
 """SessionEnd: write a per-session summary (questions asked vs. auto-answered) to the store."""
 
-from human_common import append_records, is_child, load_records, make_record, read_hook_input
+from common import append_records, is_child, load_records, make_record, read_hook_input
 
 
 def main() -> None:
