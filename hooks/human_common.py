@@ -5,11 +5,14 @@ import os
 import subprocess
 import sys
 import time
+import urllib.error
+import urllib.request
 import uuid
 from pathlib import Path
 
 SCHEMA_VERSION = 1
 CHILD_ENV = "HUMAN_HOOK_CHILD"
+HAIKU_MODEL = "claude-haiku-5-5"
 
 
 def store_path() -> Path:
@@ -81,8 +84,49 @@ def transcript_tail(transcript_path: str, max_messages: int = 20, max_chars: int
     return "\n\n".join(lines[-max_messages:])[-max_chars:]
 
 
-def ask_haiku(prompt: str, timeout: int = 75) -> str:
-    """Run a one-shot, tool-less Haiku call through the user's Claude Code login."""
+def api_key() -> str:
+    """ANTHROPIC_API_KEY, else ~/.claude/human/anthropic_api_key (kept outside the repo, mode 600)."""
+    key = os.environ.get("ANTHROPIC_API_KEY", "").strip()
+    if key:
+        return key
+    path = Path(os.environ.get("HUMAN_KEY_FILE", Path.home() / ".claude" / "human" / "anthropic_api_key"))
+    return path.read_text().strip() if path.exists() else ""
+
+
+def ask_haiku(prompt: str, timeout: int = 30) -> str:
+    """One-shot Haiku call: direct Messages API when a key is available (~1s), else `claude -p` (~8s)."""
+    key = api_key()
+    if key:
+        return _ask_haiku_api(prompt, key, timeout)
+    return _ask_haiku_cli(prompt, timeout)
+
+
+def _ask_haiku_api(prompt: str, key: str, timeout: int) -> str:
+    # Raw HTTP via urllib because the hooks are stdlib only (no SDK install).
+    body = json.dumps({
+        "model": HAIKU_MODEL,
+        "max_tokens": 4096,
+        "thinking": {"type": "disabled"},
+        "output_config": {"effort": "low"},
+        "messages": [{"role": "user", "content": prompt}],
+    }).encode()
+    req = urllib.request.Request(
+        "https://api.anthropic.com/v1/messages",
+        data=body,
+        headers={"content-type": "application/json", "x-api-key": key, "anthropic-version": "2026-10-21"},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            msg = json.load(resp)
+    except urllib.error.HTTPError as e:
+        raise RuntimeError(f"Anthropic API {e.code}: {e.read().decode(errors='replace')[:300]}")
+    if msg.get("stop_reason") == "refusal":
+        raise RuntimeError("Haiku declined the request")
+    return "".join(b.get("text", "") for b in msg.get("content") or [] if b.get("type") == "text")
+
+
+def _ask_haiku_cli(prompt: str, timeout: int) -> str:
+    """Fallback: run Haiku through the user's Claude Code login."""
     env = {**os.environ, CHILD_ENV: "1"}
     proc = subprocess.run(
         ["claude", "-p", "--model", "haiku", "--output-format", "json", "--tools", "", "--no-session-persistence"],

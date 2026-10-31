@@ -87,7 +87,7 @@ hooks/session_end.py         # per-session asked/auto-answered summary
 
 - Store: one global JSONL at `~/.claude/human/answers.jsonl` (`HUMAN_STORE` overrides). Records carry `cwd`; no explicit scope model yet, so Haiku judges applicability from cwd and context.
 - Record kinds: `answer` (source `user`), `auto_answer` (source `haiku`, with `precedent_ids`), `session` (summary). `schema_version: 1`.
-- Haiku is called via `claude -p --model haiku --tools "" --no-session-persistence`; `HUMAN_HOOK_CHILD=1` stops the hooks from running inside that call.
+- Haiku (`claude-haiku-5-5`, thinking off, effort low) is called directly over the Messages API with urllib when a key is set (`ANTHROPIC_API_KEY`, else `~/.claude/human/anthropic_api_key`; never commit it). ~2s per batch. Fallback: `claude -p --model haiku --tools "" --no-session-persistence` (~8s); `HUMAN_HOOK_CHILD=1` stops the hooks from running inside that call.
 - Auto-answers deny the AskUserQuestion call and send the answers to the model in `permissionDecisionReason`. The model is told to mention which answers it reused, and to re-ask only the questions that weren't settled.
 - Hooks are Python stdlib only.
 
@@ -96,4 +96,3 @@ hooks/session_end.py         # per-session asked/auto-answered summary
 - Explicit scopes (global vs. project) on records.
 - Detect when the user overrides an auto-answer and record it, as the signal for how much the memory is worth.
 - Better post-session work: dedupe/consolidate answers.
-- Haiku latency (~8s per question batch): cache, or skip the check when no past answer is relevant.
