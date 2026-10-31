@@ -71,19 +71,29 @@ Runs when a session ends. Likely jobs: consolidating or deduplicating stored ans
 - A local JSON file (or files) holding answered questions.
 - Scope matters: a record should carry enough metadata (project path, scope) for Haiku to judge whether it applies elsewhere.
 
-## Plugin layout (planned)
+## Plugin layout
 
 ```
 .claude-plugin/plugin.json   # manifest
 output-styles/human.md       # the "human" output style
-hooks/hooks.json             # PreToolUse / PostToolUse / SessionEnd registrations
-hooks/*                      # hook scripts
+hooks/hooks.json             # PreToolUse / PostToolUse (AskUserQuestion) + SessionEnd
+hooks/human_common.py        # store, transcript context, Haiku call
+hooks/pre_ask.py             # Haiku auto-answer from precedent (fails open)
+hooks/post_ask.py            # records user answers
+hooks/session_end.py         # per-session asked/auto-answered summary
 ```
 
-## Open questions
+## Decisions (v0, hackathon, keep it minimal)
 
-- Where does the JSON store live: global (`~/.claude/...`), per project, or both?
-- What does the post-session hook actually do?
-- When Haiku auto-answers, should the user be told or able to override, or should it happen silently?
-- What confidence threshold does Haiku need before it answers instead of asking?
-- Which language for the hook scripts, and how do we call Haiku (Anthropic SDK with an API key, or `claude -p --model haiku`)?
+- Store: one global JSONL at `~/.claude/human/answers.jsonl` (`HUMAN_STORE` overrides). Records carry `cwd`; no explicit scope model yet, so Haiku judges applicability from cwd and context.
+- Record kinds: `answer` (source `user`), `auto_answer` (source `haiku`, with `precedent_ids`), `session` (summary). `schema_version: 1`.
+- Haiku is called via `claude -p --model haiku --tools "" --no-session-persistence`; `HUMAN_HOOK_CHILD=1` stops the hooks from running inside that call.
+- Auto-answers deny the AskUserQuestion call and send the answers to the model in `permissionDecisionReason`. The model is told to mention which answers it reused, and to re-ask only the questions that weren't settled.
+- Hooks are Python stdlib only.
+
+## Next (after it works)
+
+- Explicit scopes (global vs. project) on records.
+- Detect when the user overrides an auto-answer and record it, as the signal for how much the memory is worth.
+- Better post-session work: dedupe/consolidate answers.
+- Haiku latency (~8s per question batch): cache, or skip the check when no past answer is relevant.
