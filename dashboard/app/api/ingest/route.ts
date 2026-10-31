@@ -41,7 +41,7 @@ export async function POST(req: Request) {
                   ${records.map((r) => r.kind ?? null)}::text[], ${records.map((r) => r.source ?? null)}::text[],
                   ${records.map((r) => r.ts ?? null)}::text[], ${records.map((r) => toJsonText(r))}::text[])
         as t(id, sid, kind, source, ts, d)
-      on conflict (id) do nothing`;
+      on conflict (id) do update set data = records.data || excluded.data`;
   }
   return Response.json({ ok: true, lines: lines.length, records: records.length });
 }

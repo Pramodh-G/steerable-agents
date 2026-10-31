@@ -1,6 +1,6 @@
 """PostToolUse(AskUserQuestion): store each question the user answered."""
 
-from common import append_records, is_child, load_records, make_record, read_hook_input
+from common import append_records, decision_context, is_child, load_records, make_record, read_hook_input
 
 
 def main() -> None:
@@ -18,13 +18,14 @@ def main() -> None:
         if tool_use_id and r.get("kind") == "auto_answer" and r.get("tool_use_id") == tool_use_id
     }
 
-    records = []
+    records, context = [], None
     for q in questions:
         text = q.get("question")
         if text not in answers or text in auto:
             continue
         labels = [o.get("label") for o in q.get("options") or []]
         answer = answers[text]
+        context = context or decision_context(hook_input.get("transcript_path"), tool_use_id)
         records.append(make_record(
             hook_input,
             "answer",
@@ -36,6 +37,7 @@ def main() -> None:
             answer=answer,
             free_text=answer not in labels,
             notes=(annotations.get(text) or {}).get("notes"),
+            context=context,
         ))
     append_records(records)
 

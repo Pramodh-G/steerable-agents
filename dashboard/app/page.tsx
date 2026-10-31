@@ -12,7 +12,7 @@ export default function Home() {
       <AutoRefresh ms={5000} />
       <h1>Haiku flywheel</h1>
       <p className="sub">
-        How often Haiku answered for you, and how often it was right. <Link href="/haiku">See where it went wrong →</Link>
+        How often Haiku answered for you, and how often it was right.
       </p>
       <Suspense fallback={<p className="muted">Loading…</p>}>
         <HaikuStats />

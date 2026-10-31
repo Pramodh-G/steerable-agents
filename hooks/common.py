@@ -128,6 +128,62 @@ def transcript_tail(transcript_path: str, max_messages: int = 20, max_chars: int
     return "\n\n".join(lines[-max_messages:])[-max_chars:]
 
 
+def _is_prompt(entry: dict) -> bool:
+    """A real user prompt: a string message, not a tool result, meta line or command wrapper."""
+    content = (entry.get("message") or {}).get("content")
+    return (
+        entry.get("type") == "user" and not entry.get("isMeta") and isinstance(content, str)
+        and not content.lstrip().startswith(("<command-", "<local-command", "<system-reminder"))
+    )
+
+
+def _one_line(text: str, limit: int) -> str:
+    text = " ".join(text.split())
+    return text if len(text) <= limit else text[: limit - 1].rstrip() + "…"
+
+
+def decision_context(transcript_path: str, tool_use_id: str = None, question: str = None) -> dict:
+    """What led to a question, in two short lines: the task (the user's latest prompt) and `lead_in`, what
+    Claude said just before asking.
+
+    For backfills, stops at the AskUserQuestion call with `tool_use_id`, or else the first one asking
+    `question`. Live hooks pass neither and read to the end.
+    """
+    if not transcript_path or not os.path.exists(transcript_path):
+        return {}
+    task = lead_in = None
+    with open(transcript_path, encoding="utf-8", errors="replace") as f:
+        for raw in f:
+            try:
+                entry = json.loads(raw)
+            except json.JSONDecodeError:
+                continue
+            if entry.get("type") not in ("user", "assistant"):
+                continue
+            content = (entry.get("message") or {}).get("content")
+            blocks = content if isinstance(content, list) else []
+            text = "\n".join(b.get("text", "") for b in blocks if isinstance(b, dict) and b.get("type") == "text")
+            if entry.get("type") == "user":
+                lead_in = None  # only text from the step that asked counts, not a stale earlier line
+            elif text.strip():
+                lead_in = text
+            if any(
+                isinstance(b, dict) and b.get("type") == "tool_use" and (
+                    (tool_use_id and b.get("id") == tool_use_id)
+                    or (not tool_use_id and question and b.get("name") == "AskUserQuestion"
+                        and any(q.get("question") == question for q in (b.get("input") or {}).get("questions") or []))
+                )
+                for b in blocks
+            ):
+                break
+            if _is_prompt(entry) and not content.lstrip().startswith(("[steerable-agents]", "/")) and "/steer" not in content:
+                task = content
+    return {
+        "task": _one_line(task, 200) if task else None,
+        "lead_in": _one_line(lead_in, 240) if lead_in else None,
+    }
+
+
 def api_key() -> str:
     """ANTHROPIC_API_KEY, else ~/.claude/steerable-agents/anthropic_api_key (kept outside the repo, mode 600)."""
     key = os.environ.get("ANTHROPIC_API_KEY", "").strip()

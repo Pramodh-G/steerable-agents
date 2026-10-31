@@ -55,6 +55,17 @@ export default async function HaikuStats({ full = false }: { full?: boolean }) {
         </div>
       </div>
 
+      {!full && (
+        <Link href="/haiku" className="cta">
+          <span className="cta-main">See where Haiku went wrong →</span>
+          <span className="cta-sub">
+            {overridden
+              ? `${overridden} override${overridden === 1 ? "" : "s"}: Haiku's guess, your correction, and the context it was asked in`
+              : "Every override, with Haiku's guess, your correction, and the context"}
+          </span>
+        </Link>
+      )}
+
       <section className="panel">
         <h2>Auto-answers per day</h2>
         <div className="legend">
@@ -110,14 +121,37 @@ export default async function HaikuStats({ full = false }: { full?: boolean }) {
   );
 }
 
+type Context = { task?: string | null; lead_in?: string | null };
+
 function Override({ row }: { row: HaikuRow }) {
   const { auto, review, precedents } = row;
+  const ctx = (auto.context ?? {}) as Context;
+  const haikuPick = String(auto.answer ?? "");
+  const yourPick = String(review?.answer ?? "");
   return (
     <div className="ovr">
+      {(ctx.task || ctx.lead_in) && (
+        <div className="ctx">
+          {ctx.task && <div><span className="lbl muted">Task</span> {ctx.task}</div>}
+          {ctx.lead_in && <div><span className="lbl muted">Claude</span> {ctx.lead_in}</div>}
+        </div>
+      )}
       <div className="q">
         <Link href={`/s/${auto.session_id}#rec-${auto.id}`}>{auto.question}</Link>{" "}
         <span className="muted mono">{shortCwd(auto.cwd)} · {ago(review?.ts)}</span>
       </div>
+      {(auto.options?.length ?? 0) > 0 && (
+        <ul className="opts">
+          {auto.options!.map((o) => (
+            <li key={o.label} className={o.label === yourPick ? "yours" : o.label === haikuPick ? "haikus" : ""}>
+              <b>{o.label}</b>
+              {o.label === haikuPick && <span className="tag bad">Haiku</span>}
+              {o.label === yourPick && <span className="tag good">You</span>}
+              {o.description && <span className="muted"> {o.description}</span>}
+            </li>
+          ))}
+        </ul>
+      )}
       <div className="grid">
         <div>
           <span className="lbl muted">Haiku said</span>

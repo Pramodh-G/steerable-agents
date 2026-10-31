@@ -176,3 +176,17 @@ details.seg > summary .snip { color: var(--text-2); }
 .ovr .haiku-a { color: var(--bad); text-decoration: line-through; text-decoration-thickness: 1px; }
 .ovr .user-a { color: var(--good); }
 
+
+.cta { display: block; margin: -8px 0 24px; padding: 20px 24px; border-radius: 10px; background: var(--accent); color: #fff; box-shadow: 0 2px 10px rgba(0, 0, 0, 0.12); transition: transform 0.1s, box-shadow 0.1s; }
+.cta:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(0, 0, 0, 0.18); text-decoration: none; }
+.cta-main { display: block; font-size: 24px; font-weight: 700; }
+.cta-sub { display: block; font-size: 14px; opacity: 0.9; margin-top: 4px; }
+.ovr .ctx { font-size: 13px; color: var(--text-2); margin-bottom: 6px; }
+.ovr .ctx .lbl, .ovr .opts .tag { font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; }
+.ovr .opts { list-style: none; margin: 6px 0 10px; padding: 0; font-size: 13px; }
+.ovr .opts li { padding: 4px 8px; border-left: 3px solid transparent; }
+.ovr .opts li.yours { border-left-color: var(--good); }
+.ovr .opts li.haikus { border-left-color: var(--bad); }
+.ovr .opts .tag { margin-left: 6px; padding: 1px 6px; border-radius: 4px; color: #fff; }
+.ovr .opts .tag.bad { background: var(--bad); }
+.ovr .opts .tag.good { background: var(--good); }

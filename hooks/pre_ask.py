@@ -9,6 +9,8 @@ import sys
 from common import (
     append_records,
     ask_haiku,
+    decision_context,
+    current_mode,
     is_child,
     load_records,
     make_record,
@@ -38,13 +40,33 @@ Haiku answered these from precedent and got them wrong; `answer` is the user's c
 ## Questions the agent wants to ask now
 {questions}
 
-For each question, decide whether a past answer clearly settles it for this situation. Only mark a question
-answerable if the user has already made the same or an equivalent decision and it obviously applies here
-(e.g. a general preference, or the same project). When in doubt, it is NOT answerable; asking is cheap, a wrong
-assumption is expensive. Never invent preferences.
+## Steering mode the user picked
+{mode} ({mode_hint})
+
+Your job is to save the user's attention: answer every question their past answers already settle, and
+let through only the ones that are genuinely new to them. A question is settled when either:
+
+- **same_decision**: they made the same or an equivalent decision before and it applies here (a general
+  preference, or the same project); or
+- **consistent_preference**: their past answers show a clear pattern that decides this question, even in a
+  different project or worded differently. Examples: they keep picking zero-dependency built-ins over new
+  libraries, in-memory test databases, a test/ folder run by `npm test`, the simplest scope that works, or
+  pinning current behaviour over changing it. Apply the pattern when it points at one option.
+
+Not settled (let it through): taste or product calls with no related precedent (what the app is, visual
+design, naming the product), anything irreversible or outward-facing (deleting data, pushing, publishing,
+spending money), anything a correction contradicts, or when the pattern points at two options equally.
+Never invent preferences: every answer must cite the precedent ids it rests on. Answer with the exact option
+label when one fits.
 
 Reply with only JSON:
-{{"answers": [{{"question": "<exact question text>", "answerable": true|false, "answer": "<option label or short answer>", "precedent_ids": ["<id>"], "reason": "<one sentence>"}}]}}"""
+{{"answers": [{{"question": "<exact question text>", "answerable": true|false, "answer": "<option label or short answer>", "basis": "same_decision"|"consistent_preference", "precedent_ids": ["<id>"], "reason": "<one sentence>"}}]}}"""
+
+MODE_HINTS = {
+    "autopilot": "they want to be interrupted as little as possible: apply any pattern that points at one option",
+    "copilot": "they want a say in crucial decisions: apply clear patterns, ask about genuinely new directions",
+    "pair": "they want to stay close to the work: apply strong patterns and same decisions",
+}
 
 
 def main() -> None:
@@ -58,7 +80,10 @@ def main() -> None:
     if not questions or not (precedents or corrections):
         return
 
+    mode = current_mode(hook_input.get("session_id"))
     prompt = PROMPT.format(
+        mode=mode,
+        mode_hint=MODE_HINTS.get(mode, ""),
         precedents="\n".join(
             json.dumps({k: r.get(k) for k in ("id", "cwd", "question", "options", "answer")}) for r in precedents
         ) or "(none)",
@@ -83,15 +108,22 @@ def main() -> None:
     if not answered:
         return
 
+    by_text = {q.get("question"): q for q in questions}
+    context = decision_context(hook_input.get("transcript_path"))
     append_records([
         make_record(
             hook_input,
             "auto_answer",
             source="haiku",
             question=a["question"],
+            header=by_text[a["question"]].get("header"),
+            options=by_text[a["question"]].get("options") or [],
+            multi_select=bool(by_text[a["question"]].get("multiSelect")),
             answer=a["answer"],
+            basis=a.get("basis"),
             precedent_ids=a.get("precedent_ids") or [],
             reason=a.get("reason"),
+            context=context,
         )
         for a in answered
     ])
@@ -102,7 +134,7 @@ def main() -> None:
     answered_qs = {a["question"] for a in answered}
     remaining = [q for q in questions if q.get("question") not in answered_qs]
     tool_input = hook_input.get("tool_input") or {}
-    context = [
+    message = [
         "[steerable-agents] Haiku answered these from the user's past answers, so the user was not asked:",
         *(
             f'- "{a["question"]}" -> {a["answer"]} (precedent: {", ".join(a.get("precedent_ids") or []) or "n/a"}; {a.get("reason", "")})'
@@ -126,7 +158,7 @@ def main() -> None:
             "hookEventName": "PreToolUse",
             "permissionDecision": decision,
             "updatedInput": updated,
-            "additionalContext": "\n".join(context),
+            "additionalContext": "\n".join(message),
         }
     }))
 
