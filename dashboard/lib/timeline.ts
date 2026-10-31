@@ -9,6 +9,7 @@ export type StoreRecord = {
   source?: string;
   ts?: string;
   session_id?: string;
+  tool_use_id?: string | null;
   cwd?: string;
   question?: string;
   answer?: string;
@@ -192,11 +193,23 @@ export function buildTimeline(lines: TranscriptLine[], records: StoreRecord[]): 
   const autos = records.filter((r) => r.kind === "auto_answer").sort(byTs);
   const reviews = latestReviews(records);
   const used = new Set<string>();
-  const take = (pool: StoreRecord[], question: string) => {
-    const r = pool.find((x) => !used.has(x.id) && x.question === question);
+  // Records from this AskUserQuestion call (tool_use_id), else, for records that predate tool_use_id, the next by question text.
+  const take = (pool: StoreRecord[], toolUseId: string, question: string) => {
+    const r =
+      pool.find((x) => !used.has(x.id) && x.tool_use_id === toolUseId && x.question === question) ??
+      pool.find((x) => !used.has(x.id) && !x.tool_use_id && x.question === question);
     if (r) used.add(r.id);
     return r;
   };
+  const autoItem = (q: Question, r: StoreRecord): Item => ({ kind: "auto_decision", q, record: r, review: reviews.get(r.id), ts: r.ts });
+  const userItem = (q: Question, answer: unknown, notes: string | null | undefined, rec: StoreRecord | undefined, ts?: string): Item => ({
+    kind: "user_decision",
+    q,
+    answer: String(answer),
+    notes,
+    record: rec,
+    ts: rec?.ts ?? ts,
+  });
 
   let title: string | null = null;
   const items: Item[] = [];
@@ -254,23 +267,16 @@ export function buildTimeline(lines: TranscriptLine[], records: StoreRecord[]): 
         const tur = e.toolUseResult;
         const given = tur && typeof tur === "object" && tur.answers && typeof tur.answers === "object" ? tur.answers : null;
         for (const q of ask.questions) {
-          if (b.is_error) {
-            // Denied by pre_ask.py: answered by Haiku, or left to be re-asked in a later call.
-            const auto = take(autos, q.question);
-            if (auto) items.push({ kind: "auto_decision", q, record: auto, review: reviews.get(auto.id), ts: auto.ts });
+          // pre_ask.py answers through the tool (or, in older sessions, denied the call), so Haiku's records come first.
+          const auto = take(autos, b.tool_use_id, q.question);
+          if (auto) {
+            items.push(autoItem(q, auto));
             continue;
           }
-          const rec = take(answers, q.question);
+          if (b.is_error) continue; // left to be re-asked in a later call
+          const rec = take(answers, b.tool_use_id, q.question);
           const answer = rec?.answer ?? given?.[q.question];
-          if (answer != null)
-            items.push({
-              kind: "user_decision",
-              q,
-              answer: String(answer),
-              notes: rec?.notes ?? tur?.annotations?.[q.question]?.notes,
-              record: rec,
-              ts: rec?.ts ?? e.timestamp,
-            });
+          if (answer != null) items.push(userItem(q, answer, rec?.notes ?? tur?.annotations?.[q.question]?.notes, rec, e.timestamp));
         }
         continue;
       }
@@ -283,8 +289,14 @@ export function buildTimeline(lines: TranscriptLine[], records: StoreRecord[]): 
   }
   flush();
 
-  // A question still on screen in the terminal.
-  for (const ask of asks.values()) for (const q of ask.questions) items.push({ kind: "pending_decision", q, ts: ask.ts });
+  // A call with no result yet. The PostToolUse sync runs before the result reaches the transcript, so a
+  // question with a record is already decided; only the rest are still on screen in the terminal.
+  for (const [id, ask] of asks)
+    for (const q of ask.questions) {
+      const auto = take(autos, id, q.question);
+      const rec = auto ? undefined : take(answers, id, q.question);
+      items.push(auto ? autoItem(q, auto) : rec ? userItem(q, rec.answer ?? "", rec.notes, rec) : { kind: "pending_decision", q, ts: ask.ts });
+    }
 
   // Records the transcript didn't place (e.g. transcript not synced yet).
   for (const r of autos)

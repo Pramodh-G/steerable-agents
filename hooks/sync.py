@@ -1,19 +1,25 @@
 """Stop + SessionEnd: sync this session's transcript and records to the hosted dashboard, and pull reviews back.
 
+PostToolUse runs `sync.py --live`: it hands off to a detached `--bg` process and returns at once, so the
+dashboard grows during a long turn without slowing tool calls. A lock keeps syncs from overlapping; a
+background sync that finds it held just skips (the next tool call or Stop catches up).
+
 Opt-in: does nothing unless STEERABLE_SYNC_URL + STEERABLE_SYNC_TOKEN are set, or
 ~/.claude/steerable-agents/sync.json holds {"url": ..., "token": ...}. Fails silent: errors go to stderr,
 nothing is printed to stdout (Stop hook stdout can block the session).
 """
 
+import fcntl
 import json
 import os
+import subprocess
 import sys
 import urllib.error
 import urllib.parse
 import urllib.request
 from pathlib import Path
 
-from common import append_records, is_child, load_records, read_hook_input, store_path
+from common import append_records, is_child, load_records, store_path
 
 CHUNK_BYTES = 2_000_000  # Vercel caps request bodies at 4.5 MB
 TIMEOUT = 8
@@ -137,18 +143,47 @@ def pull_reviews(cfg=None) -> int:
     return len(new)
 
 
+def _lock(block: bool):
+    """Exclusive sync lock, or None if `block` is False and another sync holds it."""
+    path = base_dir() / "sync.lock"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    f = open(path, "w")
+    try:
+        fcntl.flock(f, fcntl.LOCK_EX | (0 if block else fcntl.LOCK_NB))
+    except BlockingIOError:
+        f.close()
+        return None
+    return f
+
+
 def main() -> None:
-    hook_input = read_hook_input()
+    mode = sys.argv[1] if len(sys.argv) > 1 else ""
+    raw = sys.stdin.read()
     if is_child():
         return
     cfg = config()
     if not cfg:
         return
+    if mode == "--live":
+        proc = subprocess.Popen(
+            [sys.executable, os.path.abspath(__file__), "--bg"],
+            stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True,
+        )
+        proc.stdin.write(raw.encode())
+        proc.stdin.close()
+        return
+    lock = _lock(block=mode != "--bg")
+    if not lock:
+        return
+    hook_input = json.loads(raw)
     try:
         sync_session(hook_input.get("session_id"), hook_input.get("transcript_path"), hook_input.get("cwd"), cfg)
-        pull_reviews(cfg)
+        if mode != "--bg":
+            pull_reviews(cfg)
     except (urllib.error.URLError, OSError, ValueError) as e:
         print(f"steerable-agents: sync skipped ({e})", file=sys.stderr)
+    finally:
+        lock.close()
 
 
 if __name__ == "__main__":

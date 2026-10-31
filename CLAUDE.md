@@ -101,7 +101,7 @@ hooks/session_end.py               # per-session asked/auto-answered summary
 - Mode: `~/.claude/steerable-agents/mode.json` (`STEERABLE_MODE_FILE` overrides) holds `default` plus per-session modes keyed by `CLAUDE_CODE_SESSION_ID` (last 200). Default is `copilot`. Records carry `mode` (additive to schema v1).
 - Record kinds: `answer` (source `user`), `auto_answer` (source `haiku`, with `precedent_ids`), `session` (summary). `schema_version: 1`.
 - Haiku (`claude-haiku-5-5`, thinking off, effort low) is called directly over the Messages API with urllib when a key is set (`ANTHROPIC_API_KEY`, else `~/.claude/steerable-agents/anthropic_api_key`; never commit it). ~2s per batch. Fallback: `claude -p --model haiku --tools "" --no-session-persistence` (~8s); `STEERABLE_HOOK_CHILD=1` stops the hooks from running inside that call.
-- Auto-answers deny the AskUserQuestion call and send the answers to the model in `permissionDecisionReason`. The model is told to mention which answers it reused, and to re-ask only the questions that weren't settled.
+- Auto-answers go through the tool, not a deny (a deny shows in the terminal as "hook error"). If every question is settled, the hook returns `allow` with `updatedInput` carrying `answers`, so the dialog never opens and the tool returns a normal result. If only some are, it returns `ask` with `updatedInput` holding just the unsettled questions. Either way Haiku's answers reach the model in `additionalContext`, and the model is told to mention which answers it reused. Records carry `tool_use_id`, which `post_ask.py` and the dashboard use to tell Haiku's answers from the user's.
 - Hooks are Python stdlib only.
 
 ## Next (after it works)

@@ -21,6 +21,11 @@
         "hooks": [
           { "type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/post_ask.py\"", "timeout": 10 }
         ]
+      },
+      {
+        "hooks": [
+          { "type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/sync.py\" --live", "timeout": 5 }
+        ]
       }
     ],
     "SessionEnd": [

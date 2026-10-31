@@ -100,6 +100,7 @@ def make_record(hook_input: dict, kind: str, **fields) -> dict:
         "kind": kind,
         "ts": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
         "session_id": hook_input.get("session_id"),
+        "tool_use_id": hook_input.get("tool_use_id"),
         "cwd": hook_input.get("cwd"),
         "mode": current_mode(hook_input.get("session_id")),
         **fields,

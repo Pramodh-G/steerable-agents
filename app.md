@@ -12,7 +12,7 @@ Read `dashboard.md` first (the spec). This file covers state, decisions, and how
 
 ## Decisions the user made
 
-- **Haiku answers stay hidden in the CLI** (keep today's deny path in `hooks/pre_ask.py`). The user must *not* have to confirm Haiku's picks in the terminal; that defeats offloading decisions. The **dashboard is the only place to override** Haiku. Every accept/override is the right/wrong label for Haiku: the data flywheel.
+- **Haiku answers stay hidden in the CLI** (`hooks/pre_ask.py` answers through the tool's `updatedInput`, so the terminal shows no dialog and no error for them). The user must *not* have to confirm Haiku's picks in the terminal; that defeats offloading decisions. The **dashboard is the only place to override** Haiku. Every accept/override is the right/wrong label for Haiku: the data flywheel.
 - **Storage:** Neon Postgres (Vercel Marketplace).
 - **Sync payload:** the full raw transcript JSONL, plus the session's store records.
 - **Auth:** one shared token (`DASHBOARD_TOKEN`). Hooks send a bearer token, and the browser logs in once and gets an httpOnly cookie. No public pages.
@@ -23,7 +23,7 @@ Read `dashboard.md` first (the spec). This file covers state, decisions, and how
 ## How the demo works (user asked)
 
 The judges only use the deployed dashboard, never Claude Code.
-1. **Live:** terminal with Claude Code on one side, dashboard on the other. The Stop hook syncs after every turn, and the session page auto-refreshes (poll every ~3s with `router.refresh()`), so the timeline grows live. Override a Haiku answer in the browser and the `/haiku` accuracy page changes.
+1. **Live:** terminal with Claude Code on one side, dashboard on the other. A PostToolUse hook (`sync.py --live`, detached so it doesn't slow tool calls) syncs after every tool call and Stop after every turn, and the session page auto-refreshes (poll every ~3s with `router.refresh()`), so the timeline grows live. Override a Haiku answer in the browser and the `/haiku` accuracy page changes.
 2. **Self-serve:** the deployed URL is pre-seeded with real past sessions (`scripts/seed.py`) for judges to click through.
 3. **Backup:** a screen recording of part 1.
 
@@ -52,7 +52,7 @@ The judges only use the deployed dashboard, never Claude Code.
 Transcripts are at `~/.claude/projects/<cwd-with-dashes>/<session_id>.jsonl`. Many line types are noise for the timeline: `mode`, `permission-mode`, `attachment`, `api-request*`, `file-history-*`, `queue-operation`, `bridge-session`, `last-prompt`, `tools-used`, `system`. Use only:
 - `ai-title` → `aiTitle`: a good session title.
 - `user` with string `message.content` → the user's prompt (a top-level timeline item). Skip `isMeta` and `<command-…>`/`<local-command…>` wrappers.
-- `user` with `tool_result` blocks (`tool_use_id`, `content`, `is_error`). Structured output is in the top-level `toolUseResult`. A Haiku auto-answer shows up as an `is_error` result for `AskUserQuestion`, carrying the deny reason.
+- `user` with `tool_result` blocks (`tool_use_id`, `content`, `is_error`). Structured output is in the top-level `toolUseResult`. A Haiku auto-answer shows up as a normal `AskUserQuestion` result (or, with some questions left, a call whose result covers only those). The `auto_answer` record's `tool_use_id` + question say which answers were Haiku's. Older sessions show it as an `is_error` result carrying the deny reason.
 - `assistant` blocks: `thinking` (**often empty text, only a signature**, so don't count on thinking content), `text`, and `tool_use` (`id`, `name`, `input`).
   - `AskUserQuestion` → decision cards. Match each `input.questions[].question` to an `answer` or `auto_answer` record by session + exact question text (first unused, by ts). Append any unmatched records at the end.
   - `Edit` (`old_string`/`new_string`), `MultiEdit` (`edits[]`), `Write` (`content`) → render as diffs.

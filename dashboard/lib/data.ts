@@ -20,11 +20,21 @@ export async function listSessions(): Promise<SessionRow[]> {
       from transcript_lines where entry->>'type' = 'ai-title'
       order by session_id, line_no desc
     ),
+    auto_keys as (
+      select data->>'tool_use_id' as tool_use_id, data->>'question' as question
+      from records where kind = 'auto_answer' and data->>'tool_use_id' is not null
+    ),
     asked as (
-      select session_id, sum((select count(*) from jsonb_object_keys(entry->'toolUseResult'->'answers'))) as n
-      from transcript_lines
-      where entry->>'type' = 'user' and jsonb_typeof(entry->'toolUseResult'->'answers') = 'object'
-      group by session_id
+      -- Answers in the transcript, minus the ones pre_ask.py filled in for Haiku.
+      select t.session_id, count(*) as n
+      from transcript_lines t
+      cross join lateral jsonb_object_keys(t.entry->'toolUseResult'->'answers') as k(question)
+      where t.entry->>'type' = 'user' and jsonb_typeof(t.entry->'toolUseResult'->'answers') = 'object'
+        and not exists (
+          select 1 from auto_keys a
+          where a.question = k.question and a.tool_use_id = t.entry->'message'->'content'->0->>'tool_use_id'
+        )
+      group by t.session_id
     ),
     reviewed as (select distinct data->>'auto_answer_id' as id from records where kind = 'review'),
     autos as (

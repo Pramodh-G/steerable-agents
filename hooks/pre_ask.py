@@ -96,20 +96,37 @@ def main() -> None:
         for a in answered
     ])
 
+    # Answer through the tool itself rather than denying it: a deny shows up as a "hook error" in the
+    # terminal. With every question settled, `allow` + updatedInput carrying `answers` returns a normal
+    # result without opening the dialog. Otherwise `ask` opens it with only the unsettled questions.
     answered_qs = {a["question"] for a in answered}
     remaining = [q for q in questions if q.get("question") not in answered_qs]
-    lines = ["[steerable-agents] The user has already answered these in past sessions, so they were not asked again:"]
-    for a in answered:
-        lines.append(f'- "{a["question"]}" -> {a["answer"]} (precedent: {", ".join(a.get("precedent_ids") or []) or "n/a"}; {a.get("reason", "")})')
-    lines.append("Proceed with these answers. Tell the user in one short line which answers you reused, so they can override.")
+    tool_input = hook_input.get("tool_input") or {}
+    context = [
+        "[steerable-agents] Haiku answered these from the user's past answers, so the user was not asked:",
+        *(
+            f'- "{a["question"]}" -> {a["answer"]} (precedent: {", ".join(a.get("precedent_ids") or []) or "n/a"}; {a.get("reason", "")})'
+            for a in answered
+        ),
+        "Proceed with these answers. Tell the user in one short line which answers you reused, so they can override.",
+    ]
     if remaining:
-        lines.append("Re-ask ONLY these remaining questions with AskUserQuestion: " + "; ".join(f'"{q.get("question")}"' for q in remaining))
+        updated = {**tool_input, "questions": remaining}
+        decision = "ask"
+    else:
+        updated = {
+            **tool_input,
+            "answers": {a["question"]: a["answer"] for a in answered},
+            "annotations": {a["question"]: {"notes": "Auto-answered by steerable-agents from a past answer."} for a in answered},
+        }
+        decision = "allow"
 
     print(json.dumps({
         "hookSpecificOutput": {
             "hookEventName": "PreToolUse",
-            "permissionDecision": "deny",
-            "permissionDecisionReason": "\n".join(lines),
+            "permissionDecision": decision,
+            "updatedInput": updated,
+            "additionalContext": "\n".join(context),
         }
     }))
 
