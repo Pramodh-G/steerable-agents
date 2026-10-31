@@ -32,20 +32,29 @@ Output is cheap to generate, but human attention is not. Every "this is wrong, p
 
 The plugin ships four pieces:
 
-1. **Output style: `steerable-agents`.** Tells the model to ask instead of assume.
+1. **Steering modes + `/steer`.** Tell the model how much to ask, based on how much the user wants a say.
 2. **PreToolUse hook.** Intercepts `AskUserQuestion` before the user sees it.
 3. **PostToolUse hook.** Saves the user's answers after `AskUserQuestion` returns.
 4. **Post-session hook** (`SessionEnd` and/or `Stop`). End-of-session work. Exact role still to be decided (see Open questions).
 
-### 1. Output style: `steerable-agents`
+### 1. Steering modes: autopilot, copilot, pair
 
-The style prompt should tell the model:
+How often to ask depends on the user and the task, not on how uncertain the model is. A marketer getting a demo working doesn't care which design choices the agent makes; an engineer building something they'll own cares a lot. So the **user** picks the mode with `/steer <mode>`, and the model never switches modes on its own or asks based on its own uncertainty (the command has `disable-model-invocation`).
 
-- At every fork, design decision, or anything non-trivial that comes down to human preference, ask out loud with `AskUserQuestion`. Don't assume.
-- Be especially careful with irreversible actions: always ask before doing one.
+How it works: `/steer` runs `hooks/steer.py`, which saves the mode to `~/.claude/steerable-agents/mode.json` (per session, plus the default for new sessions) and puts the mode's instructions (`modes/<mode>.md`) into the conversation. The SessionStart hook injects the current mode's instructions on startup, resume, `/clear` and compaction. Every stored record carries `mode`. Plain-text modes injected by hooks were chosen over output styles because an output style can't be switched mid-session by a plugin command.
+
+| Mode | Who it's for | Asks about |
+|---|---|---|
+| `autopilot` | "Just get it done." | Only irreversible/outward-facing actions, or when truly blocked (credentials, missing facts). Decides everything else and lists the notable decisions at the end. |
+| `copilot` (default) | Cares about the result, not every detail. | Crucial points: direction, scope, hard-to-change structure, user-facing behaviour, unclear intent, irreversible actions. Decides the rest and lists the notable decisions at the end. |
+| `pair` | The user is the brain, Claude is the hands. | Every meaningful choice, including implementation (algorithms, structure, error handling, tests). Plans first, works in small steps, and points the user to the code (`file:line`) so they understand it. |
+
+Shared rules across all three:
+
+- Always ask before irreversible or outward-facing actions, in every mode.
 - Skip trivial decisions like variable names, formatting, or choices with an obvious convention.
-- Every question has **3–4 options**.
-- There's no cap on the number of questions. Ask as many as the task needs.
+- Every question has **3–4 options**, recommended option first.
+- If the user says "just do it" or "ask me about X", follow that for the rest of the session.
 
 ### 2. PreToolUse hook (matcher: `AskUserQuestion`)
 
@@ -75,9 +84,12 @@ Runs when a session ends. Likely jobs: consolidating or deduplicating stored ans
 
 ```
 .claude-plugin/plugin.json         # manifest
-output-styles/steerable-agents.md  # the "steerable-agents" output style
-hooks/hooks.json                   # PreToolUse / PostToolUse (AskUserQuestion) + SessionEnd
-hooks/common.py                    # store, transcript context, Haiku call
+commands/steer.md                  # /steer [autopilot|copilot|pair]
+modes/{autopilot,copilot,pair}.md  # instructions for each steering mode
+hooks/hooks.json                   # SessionStart + PreToolUse / PostToolUse (AskUserQuestion) + SessionEnd
+hooks/steer.py                     # backs /steer: saves the mode, prints its instructions
+hooks/session_start.py             # injects the current mode's instructions
+hooks/common.py                    # store, mode state, transcript context, Haiku call
 hooks/pre_ask.py                   # Haiku auto-answer from precedent (fails open)
 hooks/post_ask.py                  # records user answers
 hooks/session_end.py               # per-session asked/auto-answered summary
@@ -86,6 +98,7 @@ hooks/session_end.py               # per-session asked/auto-answered summary
 ## Decisions (v0, hackathon, keep it minimal)
 
 - Store: one global JSONL at `~/.claude/steerable-agents/answers.jsonl` (`STEERABLE_STORE` overrides). Records carry `cwd`; no explicit scope model yet, so Haiku judges applicability from cwd and context.
+- Mode: `~/.claude/steerable-agents/mode.json` (`STEERABLE_MODE_FILE` overrides) holds `default` plus per-session modes keyed by `CLAUDE_CODE_SESSION_ID` (last 200). Default is `copilot`. Records carry `mode` (additive to schema v1).
 - Record kinds: `answer` (source `user`), `auto_answer` (source `haiku`, with `precedent_ids`), `session` (summary). `schema_version: 1`.
 - Haiku (`claude-haiku-5-5`, thinking off, effort low) is called directly over the Messages API with urllib when a key is set (`ANTHROPIC_API_KEY`, else `~/.claude/steerable-agents/anthropic_api_key`; never commit it). ~2s per batch. Fallback: `claude -p --model haiku --tools "" --no-session-persistence` (~8s); `STEERABLE_HOOK_CHILD=1` stops the hooks from running inside that call.
 - Auto-answers deny the AskUserQuestion call and send the answers to the model in `permissionDecisionReason`. The model is told to mention which answers it reused, and to re-ask only the questions that weren't settled.

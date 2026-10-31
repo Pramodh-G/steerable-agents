@@ -19,6 +19,48 @@ def store_path() -> Path:
     return Path(os.environ.get("STEERABLE_STORE", Path.home() / ".claude" / "steerable-agents" / "answers.jsonl"))
 
 
+MODES = ("autopilot", "copilot", "pair")
+DEFAULT_MODE = "copilot"
+MAX_SESSION_MODES = 200
+PLUGIN_ROOT = Path(__file__).resolve().parent.parent
+
+
+def mode_path() -> Path:
+    return Path(os.environ.get("STEERABLE_MODE_FILE", Path.home() / ".claude" / "steerable-agents" / "mode.json"))
+
+
+def _load_mode_state() -> dict:
+    try:
+        state = json.loads(mode_path().read_text())
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return state if isinstance(state, dict) else {}
+
+
+def current_mode(session_id: str = None) -> str:
+    """This session's mode if /steer set one, else the default (the last mode picked anywhere), else copilot."""
+    state = _load_mode_state()
+    mode = (state.get("sessions") or {}).get(session_id) or state.get("default")
+    return mode if mode in MODES else DEFAULT_MODE
+
+
+def set_mode(mode: str, session_id: str = None) -> None:
+    """Set the mode for this session and as the default for new sessions."""
+    state = _load_mode_state()
+    sessions = state.get("sessions") if isinstance(state.get("sessions"), dict) else {}
+    if session_id:
+        sessions.pop(session_id, None)
+        sessions[session_id] = mode
+        sessions = dict(list(sessions.items())[-MAX_SESSION_MODES:])
+    path = mode_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({"default": mode, "sessions": sessions}, indent=1))
+
+
+def mode_instructions(mode: str) -> str:
+    return (PLUGIN_ROOT / "modes" / f"{mode}.md").read_text()
+
+
 def read_hook_input() -> dict:
     return json.load(sys.stdin)
 
@@ -59,6 +101,7 @@ def make_record(hook_input: dict, kind: str, **fields) -> dict:
         "ts": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
         "session_id": hook_input.get("session_id"),
         "cwd": hook_input.get("cwd"),
+        "mode": current_mode(hook_input.get("session_id")),
         **fields,
     }
 
